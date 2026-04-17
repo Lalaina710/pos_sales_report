@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_pos_sales_report_wizard_form" model="ir.ui.view">
+        <field name="name">pos.sales.report.wizard.form</field>
+        <field name="model">pos.sales.report.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Rapport Ventes PdV">
+                <group>
+                    <group string="Periode">
+                        <field name="date_from"/>
+                        <field name="date_to"/>
+                    </group>
+                    <group string="Filtres">
+                        <field name="pos_config_ids" widget="many2many_tags"/>
+                        <field name="product_ids" widget="many2many_tags"/>
+                        <field name="categ_ids" widget="many2many_tags"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_export_excel" string="Exporter Excel"
+                            type="object" class="btn-primary"
+                            icon="fa-file-excel-o"/>
+                    <button string="Annuler" class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_pos_sales_report_wizard" model="ir.actions.act_window">
+        <field name="name">Analyse Ventes PdV</field>
+        <field name="res_model">pos.sales.report.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_pos_sales_report"
+              name="Analyse Ventes PdV"
+              parent="point_of_sale.menu_point_rep"
+              action="action_pos_sales_report_wizard"
+              sequence="99"/>
+</odoo>
