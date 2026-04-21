@@ -14,6 +14,7 @@
                         <field name="pos_config_ids" widget="many2many_tags"/>
                         <field name="product_ids" widget="many2many_tags"/>
                         <field name="categ_ids" widget="many2many_tags"/>
+                        <field name="show_pos_summary"/>
                     </group>
                 </group>
                 <footer>

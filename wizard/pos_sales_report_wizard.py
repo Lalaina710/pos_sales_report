@@ -32,8 +32,27 @@ class PosSalesReportWizard(models.TransientModel):
         'product.category', string='Familles produit',
         help='Laisser vide pour toutes les familles.',
     )
+    show_pos_summary = fields.Boolean(
+        string='Synthèse CA par PdV',
+        help='Ajoute un onglet avec le CA détaillé par point de vente.',
+    )
     report_file = fields.Binary('Fichier', readonly=True)
     report_filename = fields.Char('Nom du fichier', readonly=True)
+
+    def _get_pos_summary(self, rows):
+        """Regroupe les données par PdV pour la synthèse CA."""
+        summary = {}
+        for r in rows:
+            pos_name = r['pos_name'] or 'Non défini'
+            if pos_name not in summary:
+                summary[pos_name] = {'pos_name': pos_name, 'ca_ht': 0.0, 'ca_ttc': 0.0, 'nb_lignes': 0, 'total_qty': 0.0}
+            summary[pos_name]['ca_ht'] += r['mtt_ht']
+            summary[pos_name]['ca_ttc'] += r['mtt_ttc']
+            summary[pos_name]['total_qty'] += r['qty']
+            summary[pos_name]['nb_lignes'] += 1
+        result = list(summary.values())
+        result.sort(key=lambda x: x['ca_ttc'], reverse=True)
+        return result
 
     def action_export_excel(self):
         self.ensure_one()
@@ -41,7 +60,8 @@ class PosSalesReportWizard(models.TransientModel):
             raise UserError(_('La date de debut doit etre anterieure a la date de fin.'))
 
         rows = self._get_data()
-        content = self._generate_xlsx(rows)
+        pos_summary = self._get_pos_summary(rows) if self.show_pos_summary else None
+        content = self._generate_xlsx(rows, pos_summary=pos_summary)
         self.report_file = base64.b64encode(content)
         self.report_filename = 'rapport_pdv_%s_%s.xlsx' % (
             self.date_from.strftime('%Y%m%d'),
@@ -104,7 +124,7 @@ class PosSalesReportWizard(models.TransientModel):
             })
         return rows
 
-    def _generate_xlsx(self, rows):
+    def _generate_xlsx(self, rows, pos_summary=None):
         import xlsxwriter
 
         output = io.BytesIO()
@@ -210,6 +230,58 @@ class PosSalesReportWizard(models.TransientModel):
         ws.write(row, 7, total_qty, fmt_total_qty)
         ws.write(row, 8, total_ht, fmt_total_num)
         ws.write(row, 9, total_ttc, fmt_total_num)
+
+        # Onglet Synthèse CA par PdV
+        if pos_summary:
+            ws2 = wb.add_worksheet('CA par PdV')
+            ws2.merge_range(0, 0, 0, 4,
+                            'Synthèse CA par Point de Vente', fmt_title)
+            ws2.write(1, 0, self.env.company.name, fmt_text)
+            ws2.write(1, 3, 'Période', fmt_text)
+            ws2.write(1, 4, '%s au %s' % (
+                self.date_from.strftime('%d/%m/%Y'),
+                self.date_to.strftime('%d/%m/%Y'),
+            ), fmt_text)
+
+            s_headers = [
+                ('POINT DE VENTE', fmt_header, 30),
+                ('NB LIGNES', fmt_header, 12),
+                ('QTÉ TOTALE', fmt_header, 14),
+                ('CA HT', fmt_header, 16),
+                ('CA TTC', fmt_header, 16),
+            ]
+            for i, (_, _, w) in enumerate(s_headers):
+                ws2.set_column(i, i, w)
+
+            s_row = 3
+            for col, (label, fmt, _) in enumerate(s_headers):
+                ws2.write(s_row, col, label, fmt)
+            s_row += 1
+            ws2.freeze_panes(s_row, 0)
+
+            s_total_lines = 0
+            s_total_qty = 0.0
+            s_total_ht = 0.0
+            s_total_ttc = 0.0
+
+            for r in pos_summary:
+                ws2.write(s_row, 0, r['pos_name'], fmt_text)
+                ws2.write(s_row, 1, r['nb_lignes'], fmt_num)
+                ws2.write(s_row, 2, r['total_qty'], fmt_qty if r['total_qty'] >= 0 else fmt_qty_neg)
+                ws2.write(s_row, 3, r['ca_ht'], fmt_num if r['ca_ht'] >= 0 else fmt_num_neg)
+                ws2.write(s_row, 4, r['ca_ttc'], fmt_num if r['ca_ttc'] >= 0 else fmt_num_neg)
+                s_total_lines += r['nb_lignes']
+                s_total_qty += r['total_qty']
+                s_total_ht += r['ca_ht']
+                s_total_ttc += r['ca_ttc']
+                s_row += 1
+
+            ws2.autofilter(3, 0, s_row - 1, 4)
+            ws2.write(s_row, 0, 'TOTAL', fmt_total_lbl)
+            ws2.write(s_row, 1, s_total_lines, fmt_total_num)
+            ws2.write(s_row, 2, s_total_qty, fmt_total_qty)
+            ws2.write(s_row, 3, s_total_ht, fmt_total_num)
+            ws2.write(s_row, 4, s_total_ttc, fmt_total_num)
 
         wb.close()
         return output.getvalue()
