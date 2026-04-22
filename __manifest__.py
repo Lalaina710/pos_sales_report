@@ -1,6 +1,6 @@
 {
     'name': 'Rapport Ventes PdV (Analyse)',
-    'version': '18.0.1.0.0',
+    'version': '18.0.1.0.2',
     'category': 'Point of Sale/Reporting',
     'summary': 'Export Excel des ventes PdV : Date, Code, Famille, Designation, PV, Point de vente, Qtes, HT, TTC.',
     'author': 'SOPROMER',

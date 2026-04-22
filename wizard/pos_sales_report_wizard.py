@@ -4,7 +4,7 @@ from datetime import datetime, time
 
 import pytz
 
-from odoo import api, fields, models, _
+from odoo import fields, models, _
 from odoo.exceptions import UserError
 
 
@@ -50,6 +50,9 @@ class PosSalesReportWizard(models.TransientModel):
             summary[pos_name]['ca_ttc'] += r['mtt_ttc']
             summary[pos_name]['total_qty'] += r['qty']
             summary[pos_name]['nb_lignes'] += 1
+        for s in summary.values():
+            s['pu_moyen_ht'] = s['ca_ht'] / s['total_qty'] if s['total_qty'] else 0.0
+            s['pu_moyen_ttc'] = s['ca_ttc'] / s['total_qty'] if s['total_qty'] else 0.0
         result = list(summary.values())
         result.sort(key=lambda x: x['ca_ttc'], reverse=True)
         return result
@@ -177,14 +180,14 @@ class PosSalesReportWizard(models.TransientModel):
             ('Code famille', fmt_header, 16),
             ('Famille', fmt_header_green, 20),
             ('DESIGNATION ARTICLES', fmt_header, 36),
-            ('PV', fmt_header, 12),
             ('Point de vente', fmt_header, 22),
             ('QTES', fmt_header, 12),
+            ('PV', fmt_header, 12),
             ('MTT HT', fmt_header, 14),
             ('MTT TTC', fmt_header, 14),
         ]
 
-        for i, (_, _, w) in enumerate(headers):
+        for i, (_lbl, _fmt, w) in enumerate(headers):
             ws.set_column(i, i, w)
 
         last_col = len(headers) - 1
@@ -197,7 +200,7 @@ class PosSalesReportWizard(models.TransientModel):
         ), fmt_text)
 
         row = 3
-        for col, (label, fmt, _) in enumerate(headers):
+        for col, (label, fmt, _w) in enumerate(headers):
             ws.write(row, col, label, fmt)
         row += 1
         ws.freeze_panes(row, 0)
@@ -213,9 +216,9 @@ class PosSalesReportWizard(models.TransientModel):
             ws.write(row, 2, r['code_famille'], fmt_text)
             ws.write(row, 3, r['famille'], fmt_text)
             ws.write(row, 4, r['designation'], fmt_text)
-            ws.write(row, 5, r['pv'], fmt_num if r['pv'] >= 0 else fmt_num_neg)
-            ws.write(row, 6, r['pos_name'], fmt_text)
-            ws.write(row, 7, r['qty'], fmt_qty if r['qty'] >= 0 else fmt_qty_neg)
+            ws.write(row, 5, r['pos_name'], fmt_text)
+            ws.write(row, 6, r['qty'], fmt_qty if r['qty'] >= 0 else fmt_qty_neg)
+            ws.write(row, 7, r['pv'], fmt_num if r['pv'] >= 0 else fmt_num_neg)
             ws.write(row, 8, r['mtt_ht'], fmt_num if r['mtt_ht'] >= 0 else fmt_num_neg)
             ws.write(row, 9, r['mtt_ttc'], fmt_num if r['mtt_ttc'] >= 0 else fmt_num_neg)
             total_qty += r['qty']
@@ -226,19 +229,21 @@ class PosSalesReportWizard(models.TransientModel):
         if row > first_data:
             ws.autofilter(first_data - 1, 0, row - 1, last_col)
 
-        ws.merge_range(row, 0, row, 6, 'TOTAL', fmt_total_lbl)
-        ws.write(row, 7, total_qty, fmt_total_qty)
+        total_pv = total_ht / total_qty if total_qty else 0.0
+        ws.merge_range(row, 0, row, 5, 'TOTAL', fmt_total_lbl)
+        ws.write(row, 6, total_qty, fmt_total_qty)
+        ws.write(row, 7, total_pv, fmt_total_num)
         ws.write(row, 8, total_ht, fmt_total_num)
         ws.write(row, 9, total_ttc, fmt_total_num)
 
         # Onglet Synthèse CA par PdV
         if pos_summary:
             ws2 = wb.add_worksheet('CA par PdV')
-            ws2.merge_range(0, 0, 0, 4,
+            ws2.merge_range(0, 0, 0, 6,
                             'Synthèse CA par Point de Vente', fmt_title)
             ws2.write(1, 0, self.env.company.name, fmt_text)
-            ws2.write(1, 3, 'Période', fmt_text)
-            ws2.write(1, 4, '%s au %s' % (
+            ws2.write(1, 5, 'Période', fmt_text)
+            ws2.write(1, 6, '%s au %s' % (
                 self.date_from.strftime('%d/%m/%Y'),
                 self.date_to.strftime('%d/%m/%Y'),
             ), fmt_text)
@@ -247,14 +252,16 @@ class PosSalesReportWizard(models.TransientModel):
                 ('POINT DE VENTE', fmt_header, 30),
                 ('NB LIGNES', fmt_header, 12),
                 ('QTÉ TOTALE', fmt_header, 14),
+                ('PU MOYEN HT', fmt_header, 14),
+                ('PU MOYEN TTC', fmt_header, 14),
                 ('CA HT', fmt_header, 16),
                 ('CA TTC', fmt_header, 16),
             ]
-            for i, (_, _, w) in enumerate(s_headers):
+            for i, (_lbl, _fmt, w) in enumerate(s_headers):
                 ws2.set_column(i, i, w)
 
             s_row = 3
-            for col, (label, fmt, _) in enumerate(s_headers):
+            for col, (label, fmt, _w) in enumerate(s_headers):
                 ws2.write(s_row, col, label, fmt)
             s_row += 1
             ws2.freeze_panes(s_row, 0)
@@ -268,20 +275,27 @@ class PosSalesReportWizard(models.TransientModel):
                 ws2.write(s_row, 0, r['pos_name'], fmt_text)
                 ws2.write(s_row, 1, r['nb_lignes'], fmt_num)
                 ws2.write(s_row, 2, r['total_qty'], fmt_qty if r['total_qty'] >= 0 else fmt_qty_neg)
-                ws2.write(s_row, 3, r['ca_ht'], fmt_num if r['ca_ht'] >= 0 else fmt_num_neg)
-                ws2.write(s_row, 4, r['ca_ttc'], fmt_num if r['ca_ttc'] >= 0 else fmt_num_neg)
+                ws2.write(s_row, 3, r['pu_moyen_ht'], fmt_num if r['pu_moyen_ht'] >= 0 else fmt_num_neg)
+                ws2.write(s_row, 4, r['pu_moyen_ttc'], fmt_num if r['pu_moyen_ttc'] >= 0 else fmt_num_neg)
+                ws2.write(s_row, 5, r['ca_ht'], fmt_num if r['ca_ht'] >= 0 else fmt_num_neg)
+                ws2.write(s_row, 6, r['ca_ttc'], fmt_num if r['ca_ttc'] >= 0 else fmt_num_neg)
                 s_total_lines += r['nb_lignes']
                 s_total_qty += r['total_qty']
                 s_total_ht += r['ca_ht']
                 s_total_ttc += r['ca_ttc']
                 s_row += 1
 
-            ws2.autofilter(3, 0, s_row - 1, 4)
+            s_pu_ht = s_total_ht / s_total_qty if s_total_qty else 0.0
+            s_pu_ttc = s_total_ttc / s_total_qty if s_total_qty else 0.0
+
+            ws2.autofilter(3, 0, s_row - 1, len(s_headers) - 1)
             ws2.write(s_row, 0, 'TOTAL', fmt_total_lbl)
             ws2.write(s_row, 1, s_total_lines, fmt_total_num)
             ws2.write(s_row, 2, s_total_qty, fmt_total_qty)
-            ws2.write(s_row, 3, s_total_ht, fmt_total_num)
-            ws2.write(s_row, 4, s_total_ttc, fmt_total_num)
+            ws2.write(s_row, 3, s_pu_ht, fmt_total_num)
+            ws2.write(s_row, 4, s_pu_ttc, fmt_total_num)
+            ws2.write(s_row, 5, s_total_ht, fmt_total_num)
+            ws2.write(s_row, 6, s_total_ttc, fmt_total_num)
 
         wb.close()
         return output.getvalue()
